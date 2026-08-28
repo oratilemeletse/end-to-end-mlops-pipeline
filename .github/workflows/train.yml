@@ -1,0 +1,117 @@
+name: Submit Azure ML Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing the target workspace variables
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+      data_asset:
+        description: Immutable Azure ML data reference (azureml:name:version)
+        required: true
+        type: string
+      runtime_environment:
+        description: Immutable Azure ML environment reference (azureml:name:version)
+        required: true
+        type: string
+      model_name:
+        description: Registered model name
+        required: true
+        default: bank-marketing
+        type: string
+      experiment_name:
+        description: Azure ML experiment name
+        required: true
+        default: bank-marketing-release-candidates
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azureml-training-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Submit training to ${{ inputs.environment }}
+    runs-on:
+      - self-hosted
+      - linux
+      - azure-ml
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ML_WORKSPACE: ${{ vars.AZURE_ML_WORKSPACE }}
+      AZURE_ML_COMPUTE: ${{ vars.AZURE_ML_COMPUTE }}
+      INPUT_DATA_ASSET: ${{ inputs.data_asset }}
+      INPUT_RUNTIME_ENVIRONMENT: ${{ inputs.runtime_environment }}
+      INPUT_MODEL_NAME: ${{ inputs.model_name }}
+      INPUT_EXPERIMENT_NAME: ${{ inputs.experiment_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required environment variables and immutable inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID \
+            AZURE_TENANT_ID \
+            AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP \
+            AZURE_ML_WORKSPACE \
+            AZURE_ML_COMPUTE; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+
+          for asset in \
+            "$INPUT_DATA_ASSET" \
+            "$INPUT_RUNTIME_ENVIRONMENT"; do
+            if [[ ! "$asset" =~ ^azureml:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::Asset references must use azureml:name:version."
+              exit 1
+            fi
+          done
+
+          for name in "$INPUT_MODEL_NAME" "$INPUT_EXPERIMENT_NAME"; do
+            if [[ ! "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{1,254}$ ]]; then
+              echo "::error::Model and experiment names contain invalid characters."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install runtime dependencies
+        run: python -m pip install --disable-pip-version-check .
+      - name: Submit governed training pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pipelines.submit_pipeline \
+            --data-asset "$INPUT_DATA_ASSET" \
+            --environment "$INPUT_RUNTIME_ENVIRONMENT" \
+            --compute "$AZURE_ML_COMPUTE" \
+            --model-name "$INPUT_MODEL_NAME" \
+            --experiment-name "$INPUT_EXPERIMENT_NAME"

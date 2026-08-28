@@ -1,0 +1,30 @@
+{
+  "data": {
+    "input_path": "data/raw/bank-additional-full.csv",
+    "output_dir": "artifacts/prepared",
+    "target_column": "y",
+    "excluded_features": [
+      "duration"
+    ],
+    "test_size": 0.2,
+    "random_state": 42
+  },
+  "training": {
+    "model_output": "artifacts/model/baseline",
+    "max_iter": 1000,
+    "regularization_strength": 1.0,
+    "class_weight": "balanced"
+  },
+  "evaluation": {
+    "output_dir": "artifacts/evaluation",
+    "decision_threshold": 0.5,
+    "minimum_roc_auc": 0.75,
+    "minimum_recall": 0.5,
+    "minimum_precision": 0.25
+  },
+  "tracking": {
+    "tracking_uri": "sqlite:///mlflow.db",
+    "experiment_name": "mlops-portfolio",
+    "run_name": "baseline-local-lifecycle"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "environment": "staging",
+  "online": {
+    "instance_type": "Standard_DS3_v2",
+    "instance_count": 1,
+    "max_concurrent_requests": 4,
+    "request_timeout_ms": 5000,
+    "public_network_access": "disabled"
+  },
+  "batch": {
+    "instance_count": 1,
+    "max_concurrency": 2,
+    "mini_batch_size": 250,
+    "max_retries": 3,
+    "timeout_seconds": 300
+  }
+}

@@ -1,0 +1,381 @@
+name: Release Azure ML Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Release through staging and production, or restore stable traffic
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - rollback
+      model:
+        description: Immutable model reference; required for release (azureml:name:version)
+        required: false
+        default: ""
+        type: string
+      runtime_environment:
+        description: Immutable environment reference; required for release (azureml:name:version)
+        required: false
+        default: ""
+        type: string
+      candidate_deployment:
+        description: Unique candidate deployment name
+        required: true
+        type: string
+      stable_deployment:
+        description: Existing known-good production deployment name
+        required: true
+        type: string
+      canary_percentage:
+        description: Initial production traffic percentage
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "5"
+          - "10"
+          - "20"
+      observation_minutes:
+        description: Canary observation window before promotion
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "5"
+          - "10"
+          - "20"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azureml-production-release
+  cancel-in-progress: false
+
+env:
+  AZURE_ML_CLI_VERSION: "2.43.0"
+  INPUT_OPERATION: ${{ inputs.operation }}
+  INPUT_MODEL: ${{ inputs.model }}
+  INPUT_RUNTIME_ENVIRONMENT: ${{ inputs.runtime_environment }}
+  INPUT_CANDIDATE_DEPLOYMENT: ${{ inputs.candidate_deployment }}
+  INPUT_STABLE_DEPLOYMENT: ${{ inputs.stable_deployment }}
+  INPUT_CANARY_PERCENTAGE: ${{ inputs.canary_percentage }}
+  INPUT_OBSERVATION_MINUTES: ${{ inputs.observation_minutes }}
+  SMOKE_REQUEST: >-
+    {"input_data":[{"age":40,"job":"admin.","marital":"married",
+    "education":"university.degree","default":"no","housing":"yes",
+    "loan":"no","contact":"cellular","month":"may","day_of_week":"mon",
+    "campaign":1,"pdays":999,"previous":0,"poutcome":"nonexistent",
+    "emp.var.rate":-1.8,"cons.price.idx":92.893,"cons.conf.idx":-46.2,
+    "euribor3m":1.299,"nr.employed":5099.1}]}
+
+jobs:
+  validate-inputs:
+    name: Validate release inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate immutable assets and deployment names
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$INPUT_OPERATION" == "release" ]]; then
+            for asset in \
+              "$INPUT_MODEL" \
+              "$INPUT_RUNTIME_ENVIRONMENT"; do
+              if [[ ! "$asset" =~ ^azureml:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$ ]]; then
+                echo "::error::A release requires model and environment references using azureml:name:version."
+                exit 1
+              fi
+            done
+          fi
+
+          for deployment in \
+            "$INPUT_CANDIDATE_DEPLOYMENT" \
+            "$INPUT_STABLE_DEPLOYMENT"; do
+            if [[ ! "$deployment" =~ ^[a-z][a-z0-9-]{2,31}$ ]]; then
+              echo "::error::Deployment names must be 3-32 lowercase letters, digits, or hyphens and start with a letter."
+              exit 1
+            fi
+          done
+
+          if [[ "$INPUT_CANDIDATE_DEPLOYMENT" == "$INPUT_STABLE_DEPLOYMENT" ]]; then
+            echo "::error::Candidate and stable deployments must be different."
+            exit 1
+          fi
+
+  staging:
+    name: Deploy and smoke test staging
+    if: inputs.operation == 'release'
+    needs: validate-inputs
+    runs-on:
+      - self-hosted
+      - linux
+      - azure-ml
+    timeout-minutes: 60
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ML_WORKSPACE: ${{ vars.AZURE_ML_WORKSPACE }}
+      AZURE_ML_COMPUTE: ${{ vars.AZURE_ML_COMPUTE }}
+      AZURE_ML_ONLINE_ENDPOINT: ${{ vars.AZURE_ML_ONLINE_ENDPOINT }}
+      AZURE_ML_BATCH_ENDPOINT: ${{ vars.AZURE_ML_BATCH_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate staging environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP AZURE_ML_WORKSPACE AZURE_ML_COMPUTE \
+            AZURE_ML_ONLINE_ENDPOINT AZURE_ML_BATCH_ENDPOINT; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::Staging GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install project and Azure ML CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check .
+          az extension add \
+            --name ml \
+            --version "$AZURE_ML_CLI_VERSION" \
+            --yes \
+            --only-show-errors
+      - name: Create isolated staging candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.manage_endpoints \
+            --config deployment/configs/staging.json \
+            --model "$INPUT_MODEL" \
+            --environment "$INPUT_RUNTIME_ENVIRONMENT" \
+            --online-endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --batch-endpoint "$AZURE_ML_BATCH_ENDPOINT" \
+            --deployment-name "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --compute "$AZURE_ML_COMPUTE"
+      - name: Smoke test staging candidate directly
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(
+            az ml online-endpoint invoke \
+              --name "$AZURE_ML_ONLINE_ENDPOINT" \
+              --deployment-name "$INPUT_CANDIDATE_DEPLOYMENT" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --workspace-name "$AZURE_ML_WORKSPACE" \
+              --request-file <(printf '%s' "$SMOKE_REQUEST") \
+              --only-show-errors
+          )"
+          python -c \
+            'import json,sys; value=json.loads(sys.argv[1]); assert len(value["predictions"]) == 1; assert len(value["probabilities"]) == 1; assert 0 <= value["probabilities"][0] <= 1' \
+            "$response"
+
+  production-release:
+    name: Production approval, canary, and promotion
+    if: inputs.operation == 'release'
+    needs:
+      - validate-inputs
+      - staging
+    runs-on:
+      - self-hosted
+      - linux
+      - azure-ml
+    timeout-minutes: 120
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ML_WORKSPACE: ${{ vars.AZURE_ML_WORKSPACE }}
+      AZURE_ML_COMPUTE: ${{ vars.AZURE_ML_COMPUTE }}
+      AZURE_ML_ONLINE_ENDPOINT: ${{ vars.AZURE_ML_ONLINE_ENDPOINT }}
+      AZURE_ML_BATCH_ENDPOINT: ${{ vars.AZURE_ML_BATCH_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP AZURE_ML_WORKSPACE AZURE_ML_COMPUTE \
+            AZURE_ML_ONLINE_ENDPOINT AZURE_ML_BATCH_ENDPOINT; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::Production GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install project and Azure ML CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check .
+          az extension add \
+            --name ml \
+            --version "$AZURE_ML_CLI_VERSION" \
+            --yes \
+            --only-show-errors
+      - name: Create isolated production candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.manage_endpoints \
+            --config deployment/configs/production.json \
+            --model "$INPUT_MODEL" \
+            --environment "$INPUT_RUNTIME_ENVIRONMENT" \
+            --online-endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --batch-endpoint "$AZURE_ML_BATCH_ENDPOINT" \
+            --deployment-name "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --compute "$AZURE_ML_COMPUTE"
+      - name: Smoke test production candidate directly
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(
+            az ml online-endpoint invoke \
+              --name "$AZURE_ML_ONLINE_ENDPOINT" \
+              --deployment-name "$INPUT_CANDIDATE_DEPLOYMENT" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --workspace-name "$AZURE_ML_WORKSPACE" \
+              --request-file <(printf '%s' "$SMOKE_REQUEST") \
+              --only-show-errors
+          )"
+          python -c \
+            'import json,sys; value=json.loads(sys.argv[1]); assert len(value["predictions"]) == 1; assert len(value["probabilities"]) == 1; assert 0 <= value["probabilities"][0] <= 1' \
+            "$response"
+      - name: Shift canary traffic
+        id: canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.release \
+            --endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --candidate "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --stable "$INPUT_STABLE_DEPLOYMENT" \
+            --candidate-percentage "$INPUT_CANARY_PERCENTAGE"
+      - name: Observe canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep "$(( INPUT_OBSERVATION_MINUTES * 60 ))"
+          response="$(
+            az ml online-endpoint invoke \
+              --name "$AZURE_ML_ONLINE_ENDPOINT" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --workspace-name "$AZURE_ML_WORKSPACE" \
+              --request-file <(printf '%s' "$SMOKE_REQUEST") \
+              --only-show-errors
+          )"
+          python -c \
+            'import json,sys; value=json.loads(sys.argv[1]); assert len(value["predictions"]) == 1; assert len(value["probabilities"]) == 1' \
+            "$response"
+      - name: Promote candidate to 100 percent
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.release \
+            --endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --candidate "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --stable "$INPUT_STABLE_DEPLOYMENT" \
+            --candidate-percentage 100
+      - name: Roll back failed canary or promotion
+        if: failure() && steps.canary.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::Release failed after traffic changed; restoring stable deployment."
+          python -m deployment.release \
+            --endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --candidate "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --stable "$INPUT_STABLE_DEPLOYMENT" \
+            --candidate-percentage 0
+
+  rollback:
+    name: Production approval and rollback
+    if: inputs.operation == 'rollback'
+    needs: validate-inputs
+    runs-on:
+      - self-hosted
+      - linux
+      - azure-ml
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ML_WORKSPACE: ${{ vars.AZURE_ML_WORKSPACE }}
+      AZURE_ML_ONLINE_ENDPOINT: ${{ vars.AZURE_ML_ONLINE_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP AZURE_ML_WORKSPACE AZURE_ML_ONLINE_ENDPOINT; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::Production GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install project
+        run: python -m pip install --disable-pip-version-check .
+      - name: Restore all traffic to stable deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.release \
+            --endpoint "$AZURE_ML_ONLINE_ENDPOINT" \
+            --candidate "$INPUT_CANDIDATE_DEPLOYMENT" \
+            --stable "$INPUT_STABLE_DEPLOYMENT" \
+            --candidate-percentage 0

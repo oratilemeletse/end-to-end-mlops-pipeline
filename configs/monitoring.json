@@ -1,0 +1,15 @@
+{
+  "schedule": "0 6 * * 1",
+  "lookback_days": 7,
+  "thresholds": {
+    "maximum_psi": 0.2,
+    "minimum_roc_auc": 0.75,
+    "minimum_recall": 0.5,
+    "maximum_error_rate": 0.02,
+    "maximum_p95_latency_ms": 1000
+  },
+  "retraining": {
+    "requires_evaluation_gate": true,
+    "requires_staged_release": true
+  }
+}

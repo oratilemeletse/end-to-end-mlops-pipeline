@@ -1,0 +1,93 @@
+"""Offline tests for Azure ML configuration and release contracts."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from deployment.manage_endpoints import load_deployment_config
+from deployment.online.score import parse_request
+from deployment.release import build_traffic_split
+from pipelines.azureml_pipeline import build_training_pipeline
+from src.azure_config import WorkspaceConfig
+from src.monitoring import (
+    MonitoringThresholds,
+    population_stability_index,
+    retraining_decision,
+)
+
+
+def test_workspace_config_requires_all_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AZURE_SUBSCRIPTION_ID", raising=False)
+    monkeypatch.delenv("AZURE_RESOURCE_GROUP", raising=False)
+    monkeypatch.delenv("AZURE_ML_WORKSPACE", raising=False)
+
+    with pytest.raises(ValueError, match="AZURE_SUBSCRIPTION_ID"):
+        WorkspaceConfig.from_environment()
+
+
+def test_deployment_configs_are_valid() -> None:
+    for name in ("development", "staging", "production"):
+        config = load_deployment_config(Path("deployment") / "configs" / f"{name}.json")
+        assert config["environment"] == name
+
+
+def test_governed_pipeline_wires_all_stage_outputs() -> None:
+    pipeline = build_training_pipeline(
+        raw_data_uri="azureml:bank-marketing-raw:1",
+        environment="azureml:mlops-runtime:1",
+        compute="cpu-cluster",
+        subscription_id="00000000-0000-0000-0000-000000000000",
+        resource_group="rg-test",
+        workspace_name="ws-test",
+        model_name="bank-marketing",
+        source_revision="revision-123",
+    )
+
+    assert set(pipeline.jobs) == {"prepared", "trained", "evaluated", "registered"}
+    assert set(pipeline.outputs) == {"model", "evaluation", "registration"}
+
+
+def test_online_request_rejects_leakage_feature() -> None:
+    request = json.dumps({"input_data": [{"age": 40, "duration": 30}]})
+
+    with pytest.raises(ValueError, match="prohibited duration"):
+        parse_request(request)
+
+
+def test_release_split_supports_canary_promotion_and_rollback() -> None:
+    assert build_traffic_split(
+        candidate="green",
+        candidate_percentage=10,
+        stable="blue",
+    ) == {"green": 10, "blue": 90}
+    assert build_traffic_split(
+        candidate="green",
+        candidate_percentage=100,
+        stable="blue",
+    ) == {"green": 100}
+    assert build_traffic_split(
+        candidate="green",
+        candidate_percentage=0,
+        stable="blue",
+    ) == {"blue": 100}
+
+
+def test_monitoring_requires_governed_retraining() -> None:
+    psi = population_stability_index([80, 20], [50, 50])
+    decision = retraining_decision(
+        drift_scores={"age": psi},
+        quality_metrics={"roc_auc": 0.7, "recall": 0.6},
+        thresholds=MonitoringThresholds(
+            maximum_psi=0.2,
+            minimum_roc_auc=0.75,
+            minimum_recall=0.5,
+        ),
+    )
+
+    assert decision["alert"] is True
+    assert decision["retraining_required"] is True
+    assert decision["release_gate_required"] is True
+    assert set(decision["reasons"]) == {"drift:age", "quality:roc_auc"}

@@ -1,0 +1,17 @@
+{
+  "environment": "production",
+  "online": {
+    "instance_type": "Standard_DS3_v2",
+    "instance_count": 2,
+    "max_concurrent_requests": 8,
+    "request_timeout_ms": 5000,
+    "public_network_access": "disabled"
+  },
+  "batch": {
+    "instance_count": 2,
+    "max_concurrency": 2,
+    "mini_batch_size": 500,
+    "max_retries": 3,
+    "timeout_seconds": 300
+  }
+}

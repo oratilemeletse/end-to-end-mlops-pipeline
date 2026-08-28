@@ -1,0 +1,174 @@
+name: Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/infrastructure.yml"
+      - "infra/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment parameter file to use
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      operation:
+        description: Azure operation to perform
+        required: true
+        default: what-if
+        type: choice
+        options:
+          - validate
+          - what-if
+          - deploy
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    name: Build Bicep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bicep
+        run: az bicep install --only-show-errors
+      - name: Build Bicep
+        run: az bicep build --file infra/main.bicep --stdout 1>/dev/null
+      - name: Build environment parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+          for parameter_file in infra/environments/*.bicepparam; do
+            az bicep build-params \
+              --file "$parameter_file" \
+              --stdout 1>/dev/null
+          done
+
+  validate:
+    name: Validate ${{ inputs.environment }}
+    if: github.event_name == 'workflow_dispatch'
+    needs: bicep
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
+      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID \
+            AZURE_TENANT_ID \
+            AZURE_SUBSCRIPTION_ID \
+            AZURE_LOCATION; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate subscription deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment sub validate \
+            --name "$DEPLOYMENT_NAME" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETERS_FILE" \
+            --only-show-errors \
+            --output none
+
+  what-if:
+    name: What-if ${{ inputs.environment }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.operation == 'what-if' || inputs.operation == 'deploy')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
+      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Preview subscription deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment sub what-if \
+            --name "$DEPLOYMENT_NAME" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETERS_FILE" \
+            --result-format ResourceIdOnly \
+            --only-show-errors
+
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.operation == 'deploy'
+    needs: what-if
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
+      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy reviewed subscription changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment sub create \
+            --name "$DEPLOYMENT_NAME" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETERS_FILE" \
+            --only-show-errors \
+            --output json
