@@ -27,6 +27,9 @@ param githubRepository string = ''
 @description('GitHub environment used in the workload identity subject.')
 param githubEnvironment string = environmentName
 
+@description('Optional exact GitHub OIDC subject for organizations that customize subject claims.')
+param githubFederatedSubject string = ''
+
 var resourceToken = uniqueString(subscription().id, location, environmentName)
 var resourceGroupName = 'azrg${resourceToken}'
 var commonTags = {
@@ -49,6 +52,7 @@ module platform 'modules/ml-platform.bicep' = {
     computeVmSize: computeVmSize
     environmentName: environmentName
     githubEnvironment: githubEnvironment
+    githubFederatedSubject: githubFederatedSubject
     githubRepository: githubRepository
     location: location
     maxComputeNodes: maxComputeNodes
@@ -65,4 +69,3 @@ output logAnalyticsWorkspaceName string = platform.outputs.logAnalyticsWorkspace
 output machineLearningWorkspaceName string = platform.outputs.machineLearningWorkspaceName
 output resourceGroupName string = resourceGroup.name
 output storageAccountName string = platform.outputs.storageAccountName
-

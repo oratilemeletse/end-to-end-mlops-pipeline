@@ -19,6 +19,9 @@ param githubRepository string
 @description('GitHub environment used by workload identity federation.')
 param githubEnvironment string
 
+@description('Optional exact GitHub OIDC subject override.')
+param githubFederatedSubject string
+
 @description('Resource tags.')
 param tags object
 
@@ -37,6 +40,9 @@ var storageAccountName = 'azst${resourceToken}'
 var trainingSubnetName = 'azsn${resourceToken}cpu'
 var virtualNetworkName = 'azvn${resourceToken}'
 var workspaceIdentityName = 'azid${resourceToken}ws'
+var githubOidcSubject = empty(githubFederatedSubject)
+  ? 'repo:${githubRepository}:environment:${githubEnvironment}'
+  : githubFederatedSubject
 
 var privateDnsZoneNames = [
   'privatelink.api.azureml.ms'
@@ -200,7 +206,7 @@ resource githubFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdenti
       'api://AzureADTokenExchange'
     ]
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepository}:environment:${githubEnvironment}'
+    subject: githubOidcSubject
   }
 }
 
@@ -442,6 +448,7 @@ resource computeCluster 'Microsoft.MachineLearningServices/workspaces/computes@2
   dependsOn: [
     computeStorageBlobRole
     computeStorageFileRole
+    machineLearningPrivateEndpoint
   ]
 }
 

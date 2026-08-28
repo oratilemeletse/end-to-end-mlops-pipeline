@@ -98,6 +98,18 @@ az deployment sub create `
   --parameters githubRepository='OWNER/REPOSITORY'
 ```
 
+If the GitHub organization customizes OIDC subject claims, pass the exact
+subject reported by `azure/login`:
+
+```powershell
+az deployment sub create `
+  --name phase7-dev `
+  --location southafricanorth `
+  --parameters infra\environments\dev.bicepparam `
+  --parameters githubRepository='OWNER/REPOSITORY' `
+  --parameters githubFederatedSubject='<exact-subject-claim>'
+```
+
 Read the generated values:
 
 ```powershell
