@@ -65,8 +65,9 @@ jobs:
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
-      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+      ENVIRONMENT_NAME: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
       - name: Validate required environment variables
@@ -77,6 +78,7 @@ jobs:
             AZURE_CLIENT_ID \
             AZURE_TENANT_ID \
             AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP \
             AZURE_LOCATION; do
             if [[ -z "${!variable:-}" ]]; then
               echo "::error::GitHub environment variable $variable is required."
@@ -92,10 +94,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          az deployment sub validate \
+          az deployment group validate \
             --name "$DEPLOYMENT_NAME" \
-            --location "$AZURE_LOCATION" \
-            --parameters "$PARAMETERS_FILE" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/resource-group.bicep \
+            --parameters \
+              environmentName="$ENVIRONMENT_NAME" \
+              location="$AZURE_LOCATION" \
             --only-show-errors \
             --output none
 
@@ -116,8 +121,9 @@ jobs:
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
-      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+      ENVIRONMENT_NAME: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -129,10 +135,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          az deployment sub what-if \
+          az deployment group what-if \
             --name "$DEPLOYMENT_NAME" \
-            --location "$AZURE_LOCATION" \
-            --parameters "$PARAMETERS_FILE" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/resource-group.bicep \
+            --parameters \
+              environmentName="$ENVIRONMENT_NAME" \
+              location="$AZURE_LOCATION" \
             --result-format ResourceIdOnly \
             --only-show-errors
 
@@ -153,8 +162,9 @@ jobs:
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       DEPLOYMENT_NAME: mlops-${{ inputs.environment }}-${{ github.run_number }}
-      PARAMETERS_FILE: infra/environments/${{ inputs.environment }}.bicepparam
+      ENVIRONMENT_NAME: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -166,9 +176,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          az deployment sub create \
+          az deployment group create \
             --name "$DEPLOYMENT_NAME" \
-            --location "$AZURE_LOCATION" \
-            --parameters "$PARAMETERS_FILE" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/resource-group.bicep \
+            --parameters \
+              environmentName="$ENVIRONMENT_NAME" \
+              location="$AZURE_LOCATION" \
             --only-show-errors \
             --output json

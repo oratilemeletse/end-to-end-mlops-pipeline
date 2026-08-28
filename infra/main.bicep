@@ -45,7 +45,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
   tags: commonTags
 }
 
-module platform 'modules/ml-platform.bicep' = {
+module platform 'resource-group.bicep' = {
   name: 'azdep${resourceToken}'
   scope: resourceGroup
   params: {
@@ -56,8 +56,7 @@ module platform 'modules/ml-platform.bicep' = {
     githubRepository: githubRepository
     location: location
     maxComputeNodes: maxComputeNodes
-    resourceToken: resourceToken
-    tags: commonTags
+    projectName: projectName
   }
 }
 

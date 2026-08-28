@@ -131,7 +131,9 @@ non-secret environment variables:
 | `AZURE_SUBSCRIPTION_ID` | `az account show --query id --output tsv` |
 
 Protect staging and production with required reviewers. The infrastructure
-workflow always builds and validates first, runs `what-if` before deployment,
+workflow uses `infra/resource-group.bicep` after the interactive bootstrap so
+the federated identity needs permissions only on its environment resource
+group. It always builds and validates first, runs `what-if` before deployment,
 and deploys only through an explicit manual `workflow_dispatch` selection.
 
 ## Cost Controls
