@@ -26,6 +26,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--environment-name", default="mlops-runtime")
     parser.add_argument("--environment-version", required=True)
+    parser.add_argument(
+        "--image-only",
+        action="store_true",
+        help="Register the pinned base image without invoking Azure ML's Conda builder.",
+    )
     return parser.parse_args()
 
 
@@ -50,12 +55,25 @@ def main() -> None:
         description=data_description,
         tags=data_tags,
     )
+    environment_kwargs: dict[str, object] = {
+        "name": args.environment_name,
+        "version": args.environment_version,
+        "image": (
+            "mcr.microsoft.com/azureml/"
+            "openmpi4.1.0-ubuntu22.04:20261026.v1"
+        ),
+        "description": (
+            "Pinned base runtime; dependencies install inside each governed job."
+            if args.image_only
+            else "Pinned Python runtime for governed machine-learning stages."
+        ),
+    }
+    if not args.image_only:
+        environment_kwargs["conda_file"] = str(
+            PROJECT_ROOT / "components" / "environment" / "conda.yml"
+        )
     environment = Environment(
-        name=args.environment_name,
-        version=args.environment_version,
-        image="mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04:20240212.v1",
-        conda_file=str(PROJECT_ROOT / "components" / "environment" / "conda.yml"),
-        description="Pinned Python runtime for governed machine-learning stages.",
+        **environment_kwargs,
     )
     registered_data = client.data.create_or_update(data)
     registered_environment = client.environments.create_or_update(environment)

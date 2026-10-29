@@ -18,6 +18,7 @@ def build_cloud_evidence(
     model_artifact_uri: str,
     data_reference: str,
     source_revision: str,
+    environment_reference: str,
 ) -> dict[str, Any]:
     """Combine evaluation output with explicit cloud provenance."""
     report_path = evaluation_dir / "evaluation_report.json"
@@ -35,7 +36,7 @@ def build_cloud_evidence(
             "model_artifact_uri": model_artifact_uri,
             "data_reference": data_reference,
             "source_revision": source_revision,
-            "dependency_versions": {"environment": "azureml:mlops-runtime@latest"},
+            "dependency_versions": {"environment": environment_reference},
             "parameters": {
                 "task_type": report.get("task_type", "classification"),
                 "thresholds": report.get("thresholds"),
@@ -57,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-name", required=True)
     parser.add_argument("--data-reference", required=True)
     parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--environment-reference", required=True)
     return parser.parse_args()
 
 
@@ -72,6 +74,7 @@ def main() -> None:
         model_artifact_uri=f"azureml://jobs/{run_id}/outputs/model",
         data_reference=args.data_reference,
         source_revision=args.source_revision,
+        environment_reference=args.environment_reference,
     )
     args.evidence_output.mkdir(parents=True, exist_ok=True)
     evidence_path = args.evidence_output / "release_candidate.json"

@@ -182,6 +182,8 @@ def build_customer_intelligence_pipeline(
             f"git clone --depth 1 --branch {shlex.quote(source_ref)} "
             f"{shlex.quote(source_repository)} /tmp/mlops-source && "
             "cd /tmp/mlops-source && "
+            "python -m pip install --disable-pip-version-check "
+            "--no-cache-dir -r requirements.txt && "
         )
     config_reference = (
         shlex.quote(config_path) if remote_source else "${{inputs.config}}"
@@ -297,7 +299,8 @@ def build_customer_intelligence_pipeline(
             "--resource-group ${{inputs.resource_group}} "
             "--workspace-name ${{inputs.workspace_name}} "
             "--data-reference ${{inputs.data_reference}} "
-            "--source-revision ${{inputs.source_revision}}"
+            "--source-revision ${{inputs.source_revision}} "
+            "--environment-reference ${{inputs.environment_reference}}"
         ),
         inputs={
             "model_input": Input(type="mlflow_model"),
@@ -308,6 +311,7 @@ def build_customer_intelligence_pipeline(
             "workspace_name": Input(type="string"),
             "data_reference": Input(type="string"),
             "source_revision": Input(type="string"),
+            "environment_reference": Input(type="string"),
         },
         outputs={"registration_evidence": Output(type="uri_folder")},
         environment=environment,
@@ -348,6 +352,7 @@ def build_customer_intelligence_pipeline(
             workspace_name=workspace_name,
             data_reference=raw_data_uri,
             source_revision=source_revision,
+            environment_reference=environment,
         )
         clustering_trained = train_clustering(
             **job_inputs(
@@ -369,6 +374,7 @@ def build_customer_intelligence_pipeline(
             workspace_name=workspace_name,
             data_reference=raw_data_uri,
             source_revision=source_revision,
+            environment_reference=environment,
         )
         return {
             "regression_model": regression_trained.outputs.model_output,

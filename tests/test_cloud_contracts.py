@@ -134,6 +134,7 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
     assert "--config configs/customer_intelligence.json" in (
         prepare_component.command
     )
+    assert "pip install --disable-pip-version-check" in prepare_component.command
     assert "config" not in prepare_component.inputs
 
 
