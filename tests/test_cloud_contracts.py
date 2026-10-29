@@ -120,7 +120,7 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
         regression_model_name="retail-spending-regression",
         clustering_model_name="retail-customer-segmentation",
         source_revision="revision-123",
-        config_path="https://example.test/customer-intelligence.json",
+        config_path="configs/customer_intelligence.json",
         source_repository="https://github.com/example/mlops.git",
         source_ref="deploy/release-123",
     )
@@ -131,6 +131,10 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
         prepare_component.command
     )
     assert "/tmp/mlops-source" in prepare_component.command
+    assert "--config configs/customer_intelligence.json" in (
+        prepare_component.command
+    )
+    assert "config" not in prepare_component.inputs
 
 
 def test_customer_intelligence_pipeline_requires_complete_source_reference() -> None:

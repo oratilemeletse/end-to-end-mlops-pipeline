@@ -72,6 +72,10 @@ var storageFileDataPrivilegedContributorRoleDefinitionId = subscriptionResourceI
   'Microsoft.Authorization/roleDefinitions',
   '69566ab7-960f-475b-8e7c-b3118f30c6bd'
 )
+var azureMlDataScientistRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'f6c7c914-8db3-469d-8ca1-694a8f32e121'
+)
 
 resource networkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   name: networkSecurityGroupName
@@ -414,6 +418,20 @@ resource machineLearningWorkspace 'Microsoft.MachineLearningServices/workspaces@
   ]
 }
 
+resource computeWorkspaceDataScientistRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    machineLearningWorkspace.id,
+    computeIdentity.id,
+    azureMlDataScientistRoleDefinitionId
+  )
+  scope: machineLearningWorkspace
+  properties: {
+    principalId: computeIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: azureMlDataScientistRoleDefinitionId
+  }
+}
+
 resource computeCluster 'Microsoft.MachineLearningServices/workspaces/computes@2025-06-01' = {
   parent: machineLearningWorkspace
   name: computeClusterName
@@ -448,6 +466,7 @@ resource computeCluster 'Microsoft.MachineLearningServices/workspaces/computes@2
   dependsOn: [
     computeStorageBlobRole
     computeStorageFileRole
+    computeWorkspaceDataScientistRole
     machineLearningPrivateEndpoint
   ]
 }

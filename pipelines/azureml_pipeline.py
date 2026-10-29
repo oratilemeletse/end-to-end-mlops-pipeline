@@ -173,7 +173,8 @@ def build_customer_intelligence_pipeline(
         raise ValueError(
             "source_repository and source_ref must be provided together"
         )
-    component_code = None if source_repository else str(PROJECT_ROOT)
+    remote_source = source_repository is not None
+    component_code = None if remote_source else str(PROJECT_ROOT)
     command_prefix = ""
     if source_repository and source_ref:
         command_prefix = (
@@ -182,6 +183,20 @@ def build_customer_intelligence_pipeline(
             f"{shlex.quote(source_repository)} /tmp/mlops-source && "
             "cd /tmp/mlops-source && "
         )
+    config_reference = (
+        shlex.quote(config_path) if remote_source else "${{inputs.config}}"
+    )
+
+    def component_inputs(**inputs: Input) -> dict[str, Input]:
+        if not remote_source:
+            inputs["config"] = Input(type="uri_file")
+        return inputs
+
+    def job_inputs(**inputs: Any) -> dict[str, Any]:
+        if not remote_source:
+            inputs["config"] = Input(type="uri_file", path=config_path)
+        return inputs
+
     prepare_retail = command(
         name="prepare_retail_customer_data",
         display_name="Prepare retail customer snapshots",
@@ -192,13 +207,10 @@ def build_customer_intelligence_pipeline(
             "--output /tmp/online-retail.csv && "
             "python -m src.customer_intelligence_data "
             "--input-data /tmp/online-retail.csv "
-            "--config ${{inputs.config}} "
+            f"--config {config_reference} "
             "--output-dir ${{outputs.prepared_data}}"
         ),
-        inputs={
-            "raw_data": Input(type="uri_file"),
-            "config": Input(type="uri_file"),
-        },
+        inputs=component_inputs(raw_data=Input(type="uri_file")),
         outputs={"prepared_data": Output(type="uri_folder")},
         environment=environment,
         compute=compute,
@@ -210,13 +222,10 @@ def build_customer_intelligence_pipeline(
         command=(
             f"{command_prefix}python -m src.train_customer_regression "
             "--prepared-data ${{inputs.prepared_data}} "
-            "--config ${{inputs.config}} "
+            f"--config {config_reference} "
             "--model-output ${{outputs.model_output}}"
         ),
-        inputs={
-            "prepared_data": Input(type="uri_folder"),
-            "config": Input(type="uri_file"),
-        },
+        inputs=component_inputs(prepared_data=Input(type="uri_folder")),
         outputs={"model_output": Output(type="mlflow_model")},
         environment=environment,
         compute=compute,
@@ -229,14 +238,13 @@ def build_customer_intelligence_pipeline(
             f"{command_prefix}python -m src.evaluate_customer_regression "
             "--model-input ${{inputs.model_input}} "
             "--prepared-data ${{inputs.prepared_data}} "
-            "--config ${{inputs.config}} "
+            f"--config {config_reference} "
             "--evaluation-output ${{outputs.evaluation_output}}"
         ),
-        inputs={
-            "model_input": Input(type="mlflow_model"),
-            "prepared_data": Input(type="uri_folder"),
-            "config": Input(type="uri_file"),
-        },
+        inputs=component_inputs(
+            model_input=Input(type="mlflow_model"),
+            prepared_data=Input(type="uri_folder"),
+        ),
         outputs={"evaluation_output": Output(type="uri_folder")},
         environment=environment,
         compute=compute,
@@ -248,13 +256,10 @@ def build_customer_intelligence_pipeline(
         command=(
             f"{command_prefix}python -m src.train_customer_clustering "
             "--prepared-data ${{inputs.prepared_data}} "
-            "--config ${{inputs.config}} "
+            f"--config {config_reference} "
             "--model-output ${{outputs.model_output}}"
         ),
-        inputs={
-            "prepared_data": Input(type="uri_folder"),
-            "config": Input(type="uri_file"),
-        },
+        inputs=component_inputs(prepared_data=Input(type="uri_folder")),
         outputs={"model_output": Output(type="mlflow_model")},
         environment=environment,
         compute=compute,
@@ -267,14 +272,13 @@ def build_customer_intelligence_pipeline(
             f"{command_prefix}python -m src.evaluate_customer_clustering "
             "--model-input ${{inputs.model_input}} "
             "--prepared-data ${{inputs.prepared_data}} "
-            "--config ${{inputs.config}} "
+            f"--config {config_reference} "
             "--evaluation-output ${{outputs.evaluation_output}}"
         ),
-        inputs={
-            "model_input": Input(type="mlflow_model"),
-            "prepared_data": Input(type="uri_folder"),
-            "config": Input(type="uri_file"),
-        },
+        inputs=component_inputs(
+            model_input=Input(type="mlflow_model"),
+            prepared_data=Input(type="uri_folder"),
+        ),
         outputs={"evaluation_output": Output(type="uri_folder")},
         environment=environment,
         compute=compute,
@@ -320,17 +324,20 @@ def build_customer_intelligence_pipeline(
     )
     def customer_intelligence_pipeline() -> dict[str, Any]:
         prepared = prepare_retail(
-            raw_data=Input(type="uri_file", path=raw_data_uri),
-            config=Input(type="uri_file", path=config_path),
+            **job_inputs(
+                raw_data=Input(type="uri_file", path=raw_data_uri),
+            )
         )
         regression_trained = train_regression(
-            prepared_data=prepared.outputs.prepared_data,
-            config=Input(type="uri_file", path=config_path),
+            **job_inputs(
+                prepared_data=prepared.outputs.prepared_data,
+            )
         )
         regression_evaluated = evaluate_regression(
-            model_input=regression_trained.outputs.model_output,
-            prepared_data=prepared.outputs.prepared_data,
-            config=Input(type="uri_file", path=config_path),
+            **job_inputs(
+                model_input=regression_trained.outputs.model_output,
+                prepared_data=prepared.outputs.prepared_data,
+            )
         )
         regression_registered = register_task_model(
             model_input=regression_trained.outputs.model_output,
@@ -343,13 +350,15 @@ def build_customer_intelligence_pipeline(
             source_revision=source_revision,
         )
         clustering_trained = train_clustering(
-            prepared_data=prepared.outputs.prepared_data,
-            config=Input(type="uri_file", path=config_path),
+            **job_inputs(
+                prepared_data=prepared.outputs.prepared_data,
+            )
         )
         clustering_evaluated = evaluate_clustering(
-            model_input=clustering_trained.outputs.model_output,
-            prepared_data=prepared.outputs.prepared_data,
-            config=Input(type="uri_file", path=config_path),
+            **job_inputs(
+                model_input=clustering_trained.outputs.model_output,
+                prepared_data=prepared.outputs.prepared_data,
+            )
         )
         clustering_registered = register_task_model(
             model_input=clustering_trained.outputs.model_output,
