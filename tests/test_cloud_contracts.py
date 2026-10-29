@@ -136,6 +136,8 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
     )
     assert "pip install --disable-pip-version-check" in prepare_component.command
     assert "config" not in prepare_component.inputs
+    assert "raw_data" not in prepare_component.inputs
+    assert "--archive" not in prepare_component.command
 
 
 def test_customer_intelligence_pipeline_requires_complete_source_reference() -> None:

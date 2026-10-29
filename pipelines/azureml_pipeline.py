@@ -188,6 +188,7 @@ def build_customer_intelligence_pipeline(
     config_reference = (
         shlex.quote(config_path) if remote_source else "${{inputs.config}}"
     )
+    archive_argument = "" if remote_source else "--archive ${{inputs.raw_data}} "
 
     def component_inputs(**inputs: Input) -> dict[str, Input]:
         if not remote_source:
@@ -205,14 +206,16 @@ def build_customer_intelligence_pipeline(
         code=component_code,
         command=(
             f"{command_prefix}python -m scripts.download_online_retail "
-            "--archive ${{inputs.raw_data}} "
+            f"{archive_argument}"
             "--output /tmp/online-retail.csv && "
             "python -m src.customer_intelligence_data "
             "--input-data /tmp/online-retail.csv "
             f"--config {config_reference} "
             "--output-dir ${{outputs.prepared_data}}"
         ),
-        inputs=component_inputs(raw_data=Input(type="uri_file")),
+        inputs=component_inputs(
+            **({} if remote_source else {"raw_data": Input(type="uri_file")})
+        ),
         outputs={"prepared_data": Output(type="uri_folder")},
         environment=environment,
         compute=compute,
@@ -329,7 +332,13 @@ def build_customer_intelligence_pipeline(
     def customer_intelligence_pipeline() -> dict[str, Any]:
         prepared = prepare_retail(
             **job_inputs(
-                raw_data=Input(type="uri_file", path=raw_data_uri),
+                **(
+                    {}
+                    if remote_source
+                    else {
+                        "raw_data": Input(type="uri_file", path=raw_data_uri),
+                    }
+                )
             )
         )
         regression_trained = train_regression(
