@@ -1,4 +1,7 @@
-# Phase 7 Azure Infrastructure
+---
+title: Phase 7 Azure Infrastructure
+description: Prepare, validate, and deploy the private Azure ML platform with Bicep.
+---
 
 This directory contains subscription-scoped Bicep for the Azure Machine
 Learning development, staging, and production environments.
@@ -48,6 +51,66 @@ repair resources after deployment. See
 [`docs/PHASE7_POLICY_REVIEW.md`](../docs/PHASE7_POLICY_REVIEW.md).
 
 ## Local Validation
+
+### Generate a deployment bundle
+
+Use PowerShell 7 and the installed Azure CLI with Bicep to generate the
+approved development artifacts. This command compiles locally and does not
+sign in, contact ARM, provision resources, or submit training:
+
+```powershell
+pwsh -File scripts\prepare_deployment.ps1 `
+  -EnvironmentName dev `
+  -GitHubRepository 'oratilemeletse/end-to-end-mlops-pipeline'
+```
+
+The ignored `outputs/deployment/dev/` directory contains:
+
+| Artifact | Purpose |
+|---|---|
+| `subscription.template.json` | Bootstrap the resource group and platform |
+| `subscription.parameters.json` | Development configuration and GitHub OIDC inputs |
+| `resource-group.template.json` | Update an existing environment at resource-group scope |
+| `resource-group.parameters.json` | The same approved inputs for scoped updates |
+
+The parameter files contain no subscription identifiers or credentials. Both
+scopes use the checked environment configuration, including VM size and node
+limit, rather than duplicating these settings in a second deployment recipe.
+Use `-GitHubFederatedSubject` when your organization customizes the OIDC subject.
+The command overwrites only its four named bundle files on subsequent runs.
+A failed compilation raises an error; do not deploy a bundle from a failed run.
+
+Validate and preview the bootstrap bundle after confirming your account and
+setting `AZURE_SUBSCRIPTION_ID` to the intended subscription:
+
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) {
+  throw 'Set AZURE_SUBSCRIPTION_ID to the reviewed deployment target.'
+}
+az deployment sub validate `
+  --subscription $env:AZURE_SUBSCRIPTION_ID `
+  --location southafricanorth `
+  --template-file outputs\deployment\dev\subscription.template.json `
+  --parameters '@outputs\deployment\dev\subscription.parameters.json'
+az deployment sub what-if `
+  --subscription $env:AZURE_SUBSCRIPTION_ID `
+  --location southafricanorth `
+  --template-file outputs\deployment\dev\subscription.template.json `
+  --parameters '@outputs\deployment\dev\subscription.parameters.json'
+```
+
+For an already provisioned environment, use `az deployment group validate`
+and `az deployment group what-if` with the resource-group bundle and an explicit
+`--resource-group` instead. Do not bootstrap a second environment merely
+because a historical session recorded different deterministic resource names.
+Resolve the actual target from current deployment outputs.
+
+Private Azure ML, Blob, File, and Key Vault data-plane operations require a
+network-connected operator or runner with private DNS resolution. GitHub-hosted
+runners can run ARM validation and infrastructure updates but cannot upload
+data or submit jobs to the private workspace without network connectivity.
+
+### Validate source templates
 
 Confirm the intended account before every Azure command:
 

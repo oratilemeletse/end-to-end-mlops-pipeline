@@ -25,7 +25,8 @@ def build_cloud_evidence(
         raise FileNotFoundError(f"Evaluation report does not exist: {report_path}")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
+        "task_type": report.get("task_type", "classification"),
         "approved": report.get("approved"),
         "metrics": report.get("metrics"),
         "threshold_checks": report.get("threshold_checks"),
@@ -36,8 +37,10 @@ def build_cloud_evidence(
             "source_revision": source_revision,
             "dependency_versions": {"environment": "azureml:mlops-runtime@latest"},
             "parameters": {
-                "decision_threshold": report.get("decision_threshold"),
+                "task_type": report.get("task_type", "classification"),
+                "thresholds": report.get("thresholds"),
             },
+            "feature_columns": report.get("feature_columns"),
         },
     }
 

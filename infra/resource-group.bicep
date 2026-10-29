@@ -37,7 +37,7 @@ var commonTags = {
 }
 
 module platform 'modules/ml-platform.bicep' = {
-  name: 'azdep${resourceToken}'
+  name: 'azdep${resourceToken}platform'
   params: {
     computeVmSize: computeVmSize
     environmentName: environmentName

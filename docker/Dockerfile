@@ -26,6 +26,7 @@ COPY --chown=mlops:mlops configs ./configs
 COPY --chown=mlops:mlops src ./src
 COPY --chown=mlops:mlops pipelines ./pipelines
 COPY --chown=mlops:mlops scripts ./scripts
+COPY --chown=mlops:mlops deployment ./deployment
 
 USER mlops
 

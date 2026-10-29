@@ -1,0 +1,12 @@
+{
+  "reference": {
+    "histogram_bins": 10,
+    "minimum_current_rows": 100
+  },
+  "thresholds": {
+    "maximum_feature_psi": 0.2,
+    "maximum_regression_mae_to_baseline_ratio": 1.0,
+    "maximum_cluster_assignment_psi": 0.2,
+    "maximum_cluster_distance_ratio": 1.25
+  }
+}

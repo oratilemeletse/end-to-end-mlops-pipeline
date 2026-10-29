@@ -1,0 +1,74 @@
+{
+  "retail_data": {
+    "input_path": "data/raw/online-retail.csv",
+    "output_dir": "artifacts/customer_intelligence/prepared",
+    "history_days": 90,
+    "horizon_days": 30,
+    "cutoffs": [
+      "2011-04-01",
+      "2011-05-01",
+      "2011-06-01",
+      "2011-07-01",
+      "2011-08-01",
+      "2011-09-01",
+      "2011-10-01",
+      "2011-11-01"
+    ],
+    "train_cutoffs": [
+      "2011-04-01",
+      "2011-05-01",
+      "2011-06-01",
+      "2011-07-01",
+      "2011-08-01"
+    ],
+    "validation_cutoffs": [
+      "2011-09-01",
+      "2011-10-01"
+    ],
+    "test_cutoffs": [
+      "2011-11-01"
+    ],
+    "clustering_cutoff": "2011-11-01",
+    "random_state": 42
+  },
+  "regression": {
+    "model_output": "artifacts/customer_intelligence/model/spending-regression",
+    "evaluation_output": "artifacts/customer_intelligence/evaluation/regression",
+    "candidate_models": [
+      "ridge",
+      "hist_gradient_boosting",
+      "random_forest_log"
+    ],
+    "ridge_alpha": 10.0,
+    "hist_max_iter": 200,
+    "random_forest_estimators": 200,
+    "random_forest_min_samples_leaf": 10,
+    "random_forest_max_features": 0.8,
+    "minimum_validation_mae_improvement_fraction": 0.02,
+    "maximum_test_mae_to_baseline_ratio": 1.0,
+    "maximum_test_rmse_to_baseline_ratio": 1.25
+  },
+  "clustering": {
+    "model_output": "artifacts/customer_intelligence/model/customer-segmentation",
+    "evaluation_output": "artifacts/customer_intelligence/evaluation/clustering",
+    "candidate_clusters": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "silhouette_sample_size": 5000,
+    "stability_runs": 3,
+    "minimum_silhouette": 0.25,
+    "maximum_davies_bouldin": 1.5,
+    "minimum_cluster_fraction": 0.02,
+    "minimum_stability": 0.75
+  },
+  "tracking": {
+    "tracking_uri": "sqlite:///mlflow.db",
+    "experiment_name": "customer-intelligence-platform",
+    "regression_run_name": "retail-spending-regression-release-candidate",
+    "clustering_run_name": "retail-customer-segmentation-release-candidate"
+  }
+}

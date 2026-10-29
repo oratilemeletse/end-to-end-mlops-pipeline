@@ -14,6 +14,22 @@ Public GitHub-hosted runners cannot invoke resources that are reachable only
 through the private network. Use an approved self-hosted runner inside the
 network or an equivalent controlled execution path.
 
+## Verify Locally Before Cloud Work
+
+```powershell
+python -m scripts.download_online_retail
+python -m pipelines.run_customer_intelligence `
+  --config configs\customer_intelligence.json
+python -m pipelines.run_customer_monitoring `
+  --customer-config configs\customer_intelligence.json `
+  --monitoring-config configs\customer_monitoring.json
+```
+
+The first command verifies the official archive/workbook and creates the
+ignored source CSV. The lifecycle must produce approved regression and
+clustering reports plus task-aware release evidence. Monitoring replay is a
+logic demonstration, not production telemetry.
+
 ## Provision
 
 1. Run Bicep build and parameter build.
@@ -36,6 +52,11 @@ template from creating billable or policy-incompatible resources.
 5. Compare cloud metrics with the local baseline.
 6. Reject the run if lineage or evaluation output is absent.
 
+For customer intelligence, register `online-retail.csv` with
+`--task-type customer-intelligence` and submit with
+`--pipeline-task customer-intelligence`. This creates parallel regression and
+clustering branches that share only the prepared retail snapshot output.
+
 ## Deploy to Staging
 
 1. Select an approved model version and pinned environment version.
@@ -45,6 +66,15 @@ template from creating billable or policy-incompatible resources.
    tests from an in-network runner.
 5. Invoke a batch job and verify its output schema and row count.
 6. Mark the model `staging` only after both paths pass.
+
+Retail regression and clustering are batch-first. Use
+`.github\workflows\release-customer-intelligence.yml` to create a protected
+task-specific candidate. The workflow deliberately does not invoke a billable
+batch job; a separately approved invocation must verify row count, customer
+keys, cutoff, and the task-specific output:
+
+- Regression: `predicted_spend_gbp`.
+- Clustering: `cluster_id` and `distance_to_centroid`.
 
 ## Canary and Promotion
 
@@ -86,8 +116,13 @@ Monitor two separate categories:
   resource utilization.
 - **Model health:** schema/data quality, input and prediction drift, and
   ROC-AUC/recall when labels arrive.
+- **Retail regression:** feature PSI and MAE/RMSE after the complete 30-day
+  outcome window matures.
+- **Retail clustering:** RFM PSI, assignment-mix PSI, and centroid-distance
+  ratio using the same fixed model version.
 
 `configs/monitoring.json` contains version-controlled initial thresholds.
+`configs/customer_monitoring.json` contains the retail replay thresholds.
 These are hypotheses and must be tuned using observed production behavior.
 
 A drift or quality alert creates a retraining request. It does not directly

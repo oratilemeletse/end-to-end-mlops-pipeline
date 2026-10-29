@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/infrastructure.yml"
       - "infra/**"
+      - "scripts/prepare_deployment.ps1"
   workflow_dispatch:
     inputs:
       environment:
@@ -49,6 +50,12 @@ jobs:
               --file "$parameter_file" \
               --stdout 1>/dev/null
           done
+      - name: Verify development deployment bundle
+        shell: pwsh
+        run: |
+          ./scripts/prepare_deployment.ps1 `
+            -EnvironmentName dev `
+            -GitHubRepository '${{ github.repository }}'
 
   validate:
     name: Validate ${{ inputs.environment }}

@@ -62,5 +62,18 @@ def test_build_model_asset_preserves_governance_metadata(
 
     assert model.name == "bank-marketing"
     assert model.tags["lifecycle_stage"] == "candidate"
+    assert model.tags["task_type"] == "classification"
     assert model.tags["mlflow_run_id"] == "run-123"
     assert '"roc_auc": 0.82' in model.properties["evaluation_metrics"]
+
+
+def test_load_release_evidence_rejects_task_metric_mismatch(
+    tmp_path: Path,
+) -> None:
+    evidence = valid_evidence()
+    evidence["task_type"] = "regression"
+    path = tmp_path / "release.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="regression release evidence"):
+        load_release_evidence(path)

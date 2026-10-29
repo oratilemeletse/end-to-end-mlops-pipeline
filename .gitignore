@@ -12,4 +12,5 @@ mlflow.db
 artifacts/
 outputs/
 .azureml/
+.copilot-azure/
 data/raw/

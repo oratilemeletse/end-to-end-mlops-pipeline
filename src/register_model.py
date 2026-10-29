@@ -17,6 +17,22 @@ REQUIRED_PROVENANCE_FIELDS = {
     "run_id",
     "source_revision",
 }
+TASK_REQUIRED_METRICS = {
+    "classification": {"roc_auc", "recall", "precision"},
+    "regression": {
+        "mae",
+        "rmse",
+        "baseline_mae",
+        "mae_to_baseline_ratio",
+        "rmse_to_baseline_ratio",
+    },
+    "clustering": {
+        "silhouette_score",
+        "davies_bouldin_score",
+        "minimum_cluster_fraction",
+        "stability_score",
+    },
+}
 
 
 def load_release_evidence(evidence_path: str | Path) -> dict[str, Any]:
@@ -38,6 +54,15 @@ def load_release_evidence(evidence_path: str | Path) -> dict[str, Any]:
     metrics = evidence.get("metrics")
     if not isinstance(metrics, dict) or not metrics:
         raise ValueError("Release evidence must contain evaluation metrics")
+    task_type = str(evidence.get("task_type", "classification"))
+    if task_type not in TASK_REQUIRED_METRICS:
+        raise ValueError(f"Unsupported release task type: {task_type}")
+    missing_metrics = TASK_REQUIRED_METRICS[task_type].difference(metrics)
+    if missing_metrics:
+        raise ValueError(
+            f"{task_type} release evidence is missing metrics: "
+            + ", ".join(sorted(missing_metrics))
+        )
 
     provenance = evidence.get("provenance")
     if not isinstance(provenance, dict):
@@ -71,8 +96,10 @@ def build_model_asset(
 
     metrics = evidence["metrics"]
     provenance = evidence["provenance"]
+    task_type = str(evidence.get("task_type", "classification"))
     tags = {
         "lifecycle_stage": lifecycle_stage,
+        "task_type": task_type,
         "mlflow_run_id": str(provenance["run_id"]),
         "source_revision": str(provenance["source_revision"]),
         "data_reference": str(provenance["data_reference"]),
@@ -87,11 +114,16 @@ def build_model_asset(
             sort_keys=True,
         ),
     }
+    if provenance.get("feature_columns"):
+        properties["feature_columns"] = json.dumps(
+            provenance["feature_columns"],
+            sort_keys=True,
+        )
     return Model(
         path=str(artifact),
         name=name,
         type=AssetTypes.MLFLOW_MODEL,
-        description="Evaluated Bank Marketing release candidate.",
+        description=f"Evaluated {task_type} release candidate.",
         tags=tags,
         properties=properties,
     )

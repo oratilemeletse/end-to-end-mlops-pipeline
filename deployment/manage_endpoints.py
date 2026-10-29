@@ -94,14 +94,22 @@ def build_batch_resources(
     model: str,
     environment: str,
     compute: str,
+    task_type: str = "classification",
 ) -> tuple[BatchEndpoint, ModelBatchDeployment]:
     """Build a batch endpoint and deployment with bounded retries."""
+    scoring_scripts = {
+        "classification": "score.py",
+        "regression": "score_regression.py",
+        "clustering": "score_clustering.py",
+    }
+    if task_type not in scoring_scripts:
+        raise ValueError(f"Unsupported batch task type: {task_type}")
     settings = config["batch"]
     endpoint = BatchEndpoint(
         name=endpoint_name,
-        description=f"{config['environment']} Bank Marketing batch endpoint.",
+        description=f"{config['environment']} {task_type} batch endpoint.",
         auth_mode="aad_token",
-        tags={"environment": config["environment"], "model": "bank-marketing"},
+        tags={"environment": config["environment"], "task_type": task_type},
     )
     deployment = ModelBatchDeployment(
         name=deployment_name,
@@ -110,8 +118,8 @@ def build_batch_resources(
         environment=environment,
         compute=compute,
         code_configuration=CodeConfiguration(
-            code=str(PROJECT_ROOT / "deployment" / "batch"),
-            scoring_script="score.py",
+            code=str(PROJECT_ROOT),
+            scoring_script=f"deployment/batch/{scoring_scripts[task_type]}",
         ),
         settings=ModelBatchDeploymentSettings(
             mini_batch_size=int(settings["mini_batch_size"]),
@@ -126,7 +134,7 @@ def build_batch_resources(
             error_threshold=0,
             logging_level="info",
         ),
-        tags={"lifecycle_stage": "candidate"},
+        tags={"lifecycle_stage": "candidate", "task_type": task_type},
     )
     return endpoint, deployment
 
@@ -141,6 +149,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-endpoint", required=True)
     parser.add_argument("--deployment-name", required=True)
     parser.add_argument("--compute", required=True)
+    parser.add_argument(
+        "--task-type",
+        choices=("classification", "regression", "clustering"),
+        default="classification",
+    )
+    parser.add_argument(
+        "--batch-only",
+        action="store_true",
+        help="Create only the batch deployment; required for retail tasks.",
+    )
     return parser.parse_args()
 
 
@@ -149,13 +167,8 @@ def main() -> None:
     args = parse_args()
     config = load_deployment_config(args.config)
     client = WorkspaceConfig.from_environment().create_client()
-    online_endpoint, online_deployment = build_online_resources(
-        config,
-        endpoint_name=args.online_endpoint,
-        deployment_name=args.deployment_name,
-        model=args.model,
-        environment=args.environment,
-    )
+    if args.task_type != "classification" and not args.batch_only:
+        raise ValueError("Retail regression and clustering deployments are batch-only")
     batch_endpoint, batch_deployment = build_batch_resources(
         config,
         endpoint_name=args.batch_endpoint,
@@ -163,12 +176,21 @@ def main() -> None:
         model=args.model,
         environment=args.environment,
         compute=args.compute,
+        task_type=args.task_type,
     )
-    try:
-        client.online_endpoints.get(online_endpoint.name)
-    except ResourceNotFoundError:
-        client.online_endpoints.begin_create_or_update(online_endpoint).result()
-    client.online_deployments.begin_create_or_update(online_deployment).result()
+    if not args.batch_only:
+        online_endpoint, online_deployment = build_online_resources(
+            config,
+            endpoint_name=args.online_endpoint,
+            deployment_name=args.deployment_name,
+            model=args.model,
+            environment=args.environment,
+        )
+        try:
+            client.online_endpoints.get(online_endpoint.name)
+        except ResourceNotFoundError:
+            client.online_endpoints.begin_create_or_update(online_endpoint).result()
+        client.online_deployments.begin_create_or_update(online_deployment).result()
     try:
         client.batch_endpoints.get(batch_endpoint.name)
     except ResourceNotFoundError:

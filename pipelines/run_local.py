@@ -46,7 +46,7 @@ def git_provenance() -> dict[str, Any]:
 
 def dependency_versions() -> dict[str, str]:
     """Return versions needed to reproduce the local run."""
-    packages = ["mlflow", "pandas", "scikit-learn", "skops"]
+    packages = ["mlflow", "numpy", "openpyxl", "pandas", "scikit-learn", "skops"]
     return {package: importlib.metadata.version(package) for package in packages}
 
 

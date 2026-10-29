@@ -36,7 +36,11 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
       - name: Verify Azure SDK import
-        run: python -c "from azure.ai.ml import MLClient; print(MLClient)"
+        run: >-
+          python -c "from azure.ai.ml import MLClient;
+          from pipelines.azureml_pipeline import build_customer_intelligence_pipeline;
+          from src.customer_intelligence_monitoring import build_numeric_reference;
+          print(MLClient, build_customer_intelligence_pipeline, build_numeric_reference)"
 
   dependency-security:
     name: Dependency security
@@ -75,7 +79,7 @@ jobs:
       - name: Verify non-root runtime and imports
         run: |
           docker run --rm --entrypoint python "mlops-pipeline:${GITHUB_SHA}" \
-            -c "import os; from azure.ai.ml import MLClient; import mlflow; assert os.getuid() != 0; print(MLClient, mlflow.__version__)"
+            -c "import os; from azure.ai.ml import MLClient; from pipelines.run_customer_intelligence import run_customer_intelligence_lifecycle; import mlflow; assert os.getuid() != 0; print(MLClient, run_customer_intelligence_lifecycle, mlflow.__version__)"
       - name: Scan container for high-severity vulnerabilities
         uses: aquasecurity/trivy-action@0.33.1
         with:

@@ -11,6 +11,14 @@ on:
         options:
           - dev
           - staging
+      pipeline_task:
+        description: Model lifecycle to submit
+        required: true
+        default: classification
+        type: choice
+        options:
+          - classification
+          - customer-intelligence
       data_asset:
         description: Immutable Azure ML data reference (azureml:name:version)
         required: true
@@ -28,6 +36,16 @@ on:
         description: Azure ML experiment name
         required: true
         default: bank-marketing-release-candidates
+        type: string
+      regression_model_name:
+        description: Customer-intelligence regression model name
+        required: true
+        default: retail-spending-regression
+        type: string
+      clustering_model_name:
+        description: Customer-intelligence clustering model name
+        required: true
+        default: retail-customer-segmentation
         type: string
 
 permissions:
@@ -60,6 +78,9 @@ jobs:
       INPUT_RUNTIME_ENVIRONMENT: ${{ inputs.runtime_environment }}
       INPUT_MODEL_NAME: ${{ inputs.model_name }}
       INPUT_EXPERIMENT_NAME: ${{ inputs.experiment_name }}
+      INPUT_PIPELINE_TASK: ${{ inputs.pipeline_task }}
+      INPUT_REGRESSION_MODEL_NAME: ${{ inputs.regression_model_name }}
+      INPUT_CLUSTERING_MODEL_NAME: ${{ inputs.clustering_model_name }}
     steps:
       - uses: actions/checkout@v4
       - name: Validate required environment variables and immutable inputs
@@ -88,7 +109,11 @@ jobs:
             fi
           done
 
-          for name in "$INPUT_MODEL_NAME" "$INPUT_EXPERIMENT_NAME"; do
+          for name in \
+            "$INPUT_MODEL_NAME" \
+            "$INPUT_EXPERIMENT_NAME" \
+            "$INPUT_REGRESSION_MODEL_NAME" \
+            "$INPUT_CLUSTERING_MODEL_NAME"; do
             if [[ ! "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{1,254}$ ]]; then
               echo "::error::Model and experiment names contain invalid characters."
               exit 1
@@ -114,4 +139,7 @@ jobs:
             --environment "$INPUT_RUNTIME_ENVIRONMENT" \
             --compute "$AZURE_ML_COMPUTE" \
             --model-name "$INPUT_MODEL_NAME" \
+            --pipeline-task "$INPUT_PIPELINE_TASK" \
+            --regression-model-name "$INPUT_REGRESSION_MODEL_NAME" \
+            --clustering-model-name "$INPUT_CLUSTERING_MODEL_NAME" \
             --experiment-name "$INPUT_EXPERIMENT_NAME"

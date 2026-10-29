@@ -177,6 +177,7 @@ def save_mlflow_model(
     )
     pip_requirements = [
         f"mlflow=={importlib.metadata.version('mlflow')}",
+        f"numpy=={importlib.metadata.version('numpy')}",
         f"pandas=={importlib.metadata.version('pandas')}",
         f"scikit-learn=={importlib.metadata.version('scikit-learn')}",
         f"skops=={importlib.metadata.version('skops')}",

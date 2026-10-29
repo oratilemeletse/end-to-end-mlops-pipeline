@@ -6,7 +6,10 @@ import argparse
 import os
 import subprocess
 
-from pipelines.azureml_pipeline import build_training_pipeline
+from pipelines.azureml_pipeline import (
+    build_customer_intelligence_pipeline,
+    build_training_pipeline,
+)
 from src.azure_config import WorkspaceConfig
 
 
@@ -32,8 +35,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compute", required=True)
     parser.add_argument("--model-name", default="bank-marketing")
     parser.add_argument(
+        "--pipeline-task",
+        choices=("classification", "customer-intelligence"),
+        default="classification",
+    )
+    parser.add_argument(
+        "--regression-model-name",
+        default="retail-spending-regression",
+    )
+    parser.add_argument(
+        "--clustering-model-name",
+        default="retail-customer-segmentation",
+    )
+    parser.add_argument(
         "--experiment-name", default="bank-marketing-release-candidates"
     )
+    parser.add_argument("--config-path")
+    parser.add_argument("--source-repository")
+    parser.add_argument("--source-ref")
+    parser.add_argument("--source-revision")
     return parser.parse_args()
 
 
@@ -42,16 +62,34 @@ def main() -> None:
     args = parse_args()
     workspace = WorkspaceConfig.from_environment()
     client = workspace.create_client()
-    pipeline = build_training_pipeline(
-        raw_data_uri=args.data_asset,
-        environment=args.environment,
-        compute=args.compute,
-        subscription_id=workspace.subscription_id,
-        resource_group=workspace.resource_group,
-        workspace_name=workspace.workspace_name,
-        model_name=args.model_name,
-        source_revision=source_revision(),
-    )
+    revision = args.source_revision or source_revision()
+    if args.pipeline_task == "classification":
+        pipeline = build_training_pipeline(
+            raw_data_uri=args.data_asset,
+            environment=args.environment,
+            compute=args.compute,
+            subscription_id=workspace.subscription_id,
+            resource_group=workspace.resource_group,
+            workspace_name=workspace.workspace_name,
+            model_name=args.model_name,
+            source_revision=revision,
+        )
+    else:
+        config_path = args.config_path or "configs/customer_intelligence.json"
+        pipeline = build_customer_intelligence_pipeline(
+            raw_data_uri=args.data_asset,
+            environment=args.environment,
+            compute=args.compute,
+            subscription_id=workspace.subscription_id,
+            resource_group=workspace.resource_group,
+            workspace_name=workspace.workspace_name,
+            regression_model_name=args.regression_model_name,
+            clustering_model_name=args.clustering_model_name,
+            source_revision=revision,
+            config_path=config_path,
+            source_repository=args.source_repository,
+            source_ref=args.source_ref,
+        )
     submitted = client.jobs.create_or_update(
         pipeline,
         experiment_name=args.experiment_name,

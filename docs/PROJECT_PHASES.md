@@ -24,6 +24,22 @@ instead of receiving a finished system that you cannot explain.
 
 ## Current Progress
 
+The separate
+[customer-intelligence extension roadmap](CUSTOMER_INTELLIGENCE_EXTENSION.md)
+defines regression, clustering, and multi-task operations under `CI`
+identifiers. Its tasks do not alter the baseline phase statuses below or
+count existing work as new.
+
+| Extension stage | Status | Evidence |
+|---|---|---|
+| CI-A retail data contracts | `[x]` locally verified | Official archive/workbook hashes, 541,909 source rows, temporal snapshots, deterministic artifact hashes |
+| CI-B spending regression | `[x]` locally verified | Approved test MAE `311.29` GBP versus baseline `324.91` GBP |
+| CI-C customer segmentation | `[x]` locally verified | Approved `k=2`, silhouette `0.4358`, stability `1.0` |
+| CI-D tracking/governance/batch | `[x]` locally verified | Two repeatable MLflow runs per task, release evidence, saved-model batch scoring |
+| CI-E monitoring/retraining | `[x]` historical replay | No alert; evaluation and release gates remain mandatory |
+| CI-F runtime/CI/Azure integration | `[~]` offline complete | Tests, static container checks, and Azure ML/workflow contracts exist; local Docker daemon and live Azure execution pending |
+| CI-G evidence and claims | `[x]` locally verified | Extension, architecture, operations, dataset, and implementation records updated |
+
 | Phase | Name                                     | Status  |
 | ----- | ---------------------------------------- | ------- |
 | 0     | Understand the project                   | `[x]` |
@@ -45,7 +61,9 @@ instead of receiving a finished system that you cannot explain.
 Phases 0 through 6 were complete before the documentation hierarchy tweak. The complete local lifecycle is reproducible
 in the pinned Python environment and the non-root Docker image. Phase 7 is in
 progress: its policy-aware Bicep builds successfully, passes Azure validation,
-and has a reviewed development `what-if`. Deployment is still pending. Phases
+has a reviewed development `what-if`, and the development environment is
+deployed. GitHub OIDC is verified through a successful least-privilege
+resource-group validation workflow. Cleanup verification is still pending. Phases
 8 through 14 now have offline implementation, contracts, tests, workflows, and
 runbooks, but remain `[~]` until their live Azure checkpoints pass. See the
 [hierarchical implementation record](IMPLEMENTATION_RECORD.md) for what was
@@ -463,8 +481,8 @@ code.
 - [x] Add development, staging, and production parameter files.
 - [x] Validate Bicep.
 - [x] Review `what-if` output.
-- [ ] Deploy a development environment.
-- [ ] Configure GitHub OIDC.
+- [x] Deploy a development environment.
+- [x] Configure GitHub OIDC.
 - [x] Confirm no secrets or subscription details are committed.
 - [x] Document cost controls and cleanup.
 
@@ -478,8 +496,8 @@ code.
 
 ### Verification Checkpoints
 
-- [ ] Infrastructure can be recreated from Bicep.
-- [ ] Authentication works without committed secrets.
+- [x] Infrastructure can be recreated from Bicep.
+- [x] Authentication works without committed secrets.
 - [x] Compute can scale down to zero.
 - [ ] Cleanup instructions work.
 

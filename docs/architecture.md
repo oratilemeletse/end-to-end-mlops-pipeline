@@ -1,21 +1,29 @@
 # Architecture
 
-## Lifecycle
+## Lifecycles
 
 ```text
-UCI source
+UCI Bank Marketing
   -> checksum-verified raw data
+  -> classification preparation/training/evaluation
+  -> classification MLflow model and release evidence
+
+UCI Online Retail
+  -> verified workbook and deterministic CSV
+  -> cleaned purchase transactions
+  -> time-aware customer snapshots
+  -> spending regression branch
+  -> RFM clustering branch
+  -> task-specific MLflow models and release evidence
+
+Approved model evidence
   -> versioned Azure ML data asset
-  -> preparation component
-  -> training component
-  -> MLflow model
-  -> evaluation component
-  -> release evidence and approval gate
+  -> governed task-specific Azure ML component graph
   -> Azure ML model version
-  -> staging online and batch deployments
+  -> classification online/batch or retail batch deployment
   -> endpoint tests
-  -> canary production traffic
-  -> monitoring
+  -> classification canary traffic or protected retail batch release
+  -> service, drift, and task-quality monitoring
   -> rollback or governed retraining
 ```
 
@@ -37,19 +45,30 @@ UCI source
 - New online deployments receive no traffic during creation. Traffic changes
   are separate release actions so deployment failure cannot replace the
   known-good version.
+- Bank and retail identities remain separate. The shared platform standardizes
+  lineage, gates, and operations; it does not create a cross-dataset customer
+  identity graph.
+- Regression uses chronological 90-day history and 30-day outcome windows.
+  Training outcomes finish before validation features, and validation
+  outcomes finish before final test features.
+- Clustering applies a fitted Yeo-Johnson transform before seeded K-means to
+  prevent a handful of high-spend customers from collapsing the segment-size
+  gate. Cluster IDs remain model-version-local.
+- Retail delivery is batch-first. Regression and clustering have distinct
+  output schemas instead of being forced through classifier probabilities.
 
 ## Main Contracts
 
 | Stage | Inputs | Outputs | Failure boundary |
 |---|---|---|---|
-| Acquire | Official UCI URL and expected checksums | Raw CSV and provenance | Checksum or shape mismatch |
-| Prepare | Raw CSV and checked configuration | Train/test CSVs and metadata | Schema, target, or leakage violation |
-| Train | Prepared training data and parameters | MLflow model and training metadata | Missing data or invalid model parameters |
-| Evaluate | Model, untouched test data, thresholds | Metrics, confusion counts, approval report | Invalid model output or test schema |
+| Acquire | Official UCI URL and expected checksums | Raw CSV and provenance | Checksum, workbook, or shape mismatch |
+| Prepare | Raw data and checked task configuration | Classification split or temporal customer snapshots | Schema, target, coverage, or leakage violation |
+| Train | Prepared task data and parameters | Task-specific MLflow model and metadata | Missing data, invalid parameters, or degenerate clusters |
+| Evaluate | Model, holdout/snapshot, task thresholds | Classification, regression, or clustering approval report | Invalid outputs, failed baseline/quality gate, or unusable segments |
 | Register | Model, approval report, complete provenance | Tagged Azure ML model version | Rejection, missing evidence, or missing artifact |
-| Deploy | Approved model version, environment, endpoint config | Candidate online/batch deployments | Invalid configuration or Azure deployment failure |
+| Deploy | Approved model version, environment, endpoint config | Classification online/batch or retail batch candidate | Invalid configuration or Azure deployment failure |
 | Release | Stable/candidate names and percentage | Complete endpoint traffic split | Invalid allocation or missing stable deployment |
-| Monitor | Endpoint telemetry, drift baseline, labels | Alerts and retraining decision | Missing metrics or invalid monitoring data |
+| Monitor | Frozen feature reference, predictions/assignments, matured labels | Task-aware alert and governed retraining decision | Missing labels, insufficient samples, or invalid monitoring data |
 
 ## Security and Reliability
 

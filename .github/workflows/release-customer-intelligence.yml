@@ -1,0 +1,126 @@
+name: Release Customer Intelligence Batch Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Protected GitHub environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      task_type:
+        description: Customer-intelligence task
+        required: true
+        default: regression
+        type: choice
+        options:
+          - regression
+          - clustering
+      model:
+        description: Immutable model reference (azureml:name:version)
+        required: true
+        type: string
+      runtime_environment:
+        description: Immutable environment reference (azureml:name:version)
+        required: true
+        type: string
+      batch_endpoint:
+        description: Existing or new task-specific batch endpoint name
+        required: true
+        type: string
+      deployment_name:
+        description: Unique candidate deployment name
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: customer-intelligence-${{ inputs.target_environment }}-${{ inputs.task_type }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.task_type }} batch candidate
+    runs-on:
+      - self-hosted
+      - linux
+      - azure-ml
+    timeout-minutes: 60
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ML_WORKSPACE: ${{ vars.AZURE_ML_WORKSPACE }}
+      AZURE_ML_COMPUTE: ${{ vars.AZURE_ML_COMPUTE }}
+      INPUT_TASK_TYPE: ${{ inputs.task_type }}
+      INPUT_MODEL: ${{ inputs.model }}
+      INPUT_RUNTIME_ENVIRONMENT: ${{ inputs.runtime_environment }}
+      INPUT_BATCH_ENDPOINT: ${{ inputs.batch_endpoint }}
+      INPUT_DEPLOYMENT_NAME: ${{ inputs.deployment_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate immutable inputs and environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in \
+            AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
+            AZURE_RESOURCE_GROUP AZURE_ML_WORKSPACE AZURE_ML_COMPUTE; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::GitHub environment variable $variable is required."
+              exit 1
+            fi
+          done
+          for asset in "$INPUT_MODEL" "$INPUT_RUNTIME_ENVIRONMENT"; do
+            if [[ ! "$asset" =~ ^azureml:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::Model and environment must use azureml:name:version."
+              exit 1
+            fi
+          done
+          for name in "$INPUT_BATCH_ENDPOINT" "$INPUT_DEPLOYMENT_NAME"; do
+            if [[ ! "$name" =~ ^[a-z][a-z0-9-]{2,31}$ ]]; then
+              echo "::error::Endpoint and deployment names must be 3-32 lowercase letters, digits, or hyphens."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install project
+        run: python -m pip install --disable-pip-version-check .
+      - name: Create governed batch candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m deployment.manage_endpoints \
+            --config "deployment/configs/${{ inputs.target_environment }}.json" \
+            --model "$INPUT_MODEL" \
+            --environment "$INPUT_RUNTIME_ENVIRONMENT" \
+            --online-endpoint unused-batch-only \
+            --batch-endpoint "$INPUT_BATCH_ENDPOINT" \
+            --deployment-name "$INPUT_DEPLOYMENT_NAME" \
+            --compute "$AZURE_ML_COMPUTE" \
+            --task-type "$INPUT_TASK_TYPE" \
+            --batch-only
+      - name: Record deployment boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Batch deployment created without invoking billable scoring."
+          echo "Run a separately approved batch job with a versioned snapshot asset before promotion."

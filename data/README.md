@@ -96,3 +96,79 @@ python -m src.train --config configs/local.json
 
 It preprocesses numeric and categorical columns, trains logistic regression,
 and writes a loadable MLflow model under `artifacts/model/baseline/`.
+
+---
+
+# Dataset: UCI Online Retail
+
+## Purpose
+
+The customer-intelligence extension uses Online Retail transactions for two
+separate tasks:
+
+- Predict an existing customer's gross purchase spend over the next 30 days.
+- Segment customers from recency, purchase frequency, and monetary value.
+
+These retail customers are not joined to Bank Marketing clients.
+
+## Reproduce the Download
+
+```powershell
+python -m scripts.download_online_retail
+```
+
+The command downloads the official UCI archive, verifies the archive and
+workbook, converts the workbook to deterministic UTF-8 CSV, validates its
+shape, and writes provenance metadata:
+
+```text
+data/raw/
+|-- online-retail.csv
+`-- online-retail.metadata.json
+```
+
+## Source and Integrity
+
+- Dataset: [UCI Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail)
+- DOI: [10.24432/C5BW33](https://doi.org/10.24432/C5BW33)
+- Creator: Daqing Chen
+- License: CC BY 4.0
+- Coverage: 2010-12-01 08:26 through 2011-12-09 12:50
+
+| Artifact | SHA-256 |
+|---|---|
+| `online-retail.zip` | `f5385cbb54bbebf7196389109c6b0621faab0c304e3702548165e71c84aede8b` |
+| `Online Retail.xlsx` | `43465a06f2ccf7c8b5bd2892bc7defb52f97487934fe93b16ae4c3936424676d` |
+| Generated `online-retail.csv` | `c35975c40d0e1e105090fbb11188a409393055f873841bd012915475fc84e69f` |
+
+The verified source contains 541,909 rows and eight columns. Source profiling
+found 135,080 rows without `CustomerID` and 1,454 rows without descriptions.
+
+## Cleaning and Temporal Contracts
+
+Run:
+
+```powershell
+python -m src.customer_intelligence_data `
+  --config configs/customer_intelligence.json
+```
+
+Cleaning retains identified, nonduplicate, noncancellation purchases with
+positive quantity and price. The verified local run retained 392,692
+transactions across 4,338 customers. Exclusion categories can overlap; their
+counts are recorded independently in preparation metadata.
+
+Snapshots use 90 days of history and a fully observed following 30-day target
+window. Training cutoffs are April-August 2011, validation cutoffs are
+September-October, and the untouched test cutoff is November 1. Training
+outcomes end before validation features, and validation outcomes end before
+test features. Known customers without a purchase in a complete outcome
+window receive a zero target; incomplete future windows are rejected.
+
+The generated files under `artifacts/customer_intelligence/prepared/` are:
+
+- `train.csv`: 9,620 rows.
+- `validation.csv`: 4,074 rows.
+- `test.csv`: 2,461 rows.
+- `clustering.csv`: 2,461 customers at the November 1 cutoff.
+- `cleaned_transactions.csv` and `metadata.json`.

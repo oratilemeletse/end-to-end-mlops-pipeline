@@ -6,7 +6,6 @@
 .venv/
 artifacts/
 data/raw/
-deployment/
 docs/
 infra/
 mlflow.db
