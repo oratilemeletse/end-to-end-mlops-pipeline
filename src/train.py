@@ -168,7 +168,11 @@ def save_mlflow_model(
             raise ValueError(
                 f"Model output exists and is not a directory: {output_path}"
             )
-        shutil.rmtree(output_path)
+        for child in output_path.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
     input_example = features.head(5)
     signature = infer_signature(

@@ -7,7 +7,7 @@ import mlflow.pyfunc
 import pandas as pd
 import pytest
 
-from src.train import train_from_paths, train_model
+from src.train import save_mlflow_model, train_from_paths, train_model
 
 
 def test_train_model_produces_binary_predictions() -> None:
@@ -55,6 +55,38 @@ def test_train_model_requires_two_target_classes() -> None:
 
     with pytest.raises(ValueError, match="exactly two classes"):
         train_model(features, target)
+
+
+def test_save_mlflow_model_preserves_existing_output_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    features = pd.DataFrame(
+        {
+            "usage": [1.0, 1.5, 2.0, 8.0, 8.5, 9.0],
+            "tenure": [2, 3, 4, 24, 30, 36],
+        }
+    )
+    target = pd.Series([0, 0, 0, 1, 1, 1])
+    model = train_model(features, target)
+    model_output = tmp_path / "mounted-output"
+    model_output.mkdir()
+    (model_output / "stale.txt").write_text("stale", encoding="utf-8")
+
+    original_rmtree = __import__("shutil").rmtree
+
+    def guarded_rmtree(path: str | Path, *args: object, **kwargs: object) -> None:
+        if Path(path) == model_output:
+            raise OSError("mounted output root must not be removed")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr("src.train.shutil.rmtree", guarded_rmtree)
+
+    save_mlflow_model(model, features, model_output)
+
+    assert model_output.is_dir()
+    assert not (model_output / "stale.txt").exists()
+    assert (model_output / "MLmodel").exists()
 
 
 def test_train_from_paths_writes_loadable_mlflow_model(
