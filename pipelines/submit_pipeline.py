@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+from pathlib import Path
 
 from pipelines.azureml_pipeline import (
     build_customer_intelligence_pipeline,
@@ -54,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-repository")
     parser.add_argument("--source-ref")
     parser.add_argument("--source-revision")
+    parser.add_argument("--output-yaml", type=Path)
     return parser.parse_args()
 
 
@@ -61,7 +63,6 @@ def main() -> None:
     """Build and submit a traceable release-candidate pipeline job."""
     args = parse_args()
     workspace = WorkspaceConfig.from_environment()
-    client = workspace.create_client()
     revision = args.source_revision or source_revision()
     if args.pipeline_task == "classification":
         pipeline = build_training_pipeline(
@@ -90,6 +91,12 @@ def main() -> None:
             source_repository=args.source_repository,
             source_ref=args.source_ref,
         )
+    if args.output_yaml:
+        args.output_yaml.parent.mkdir(parents=True, exist_ok=True)
+        pipeline.dump(args.output_yaml)
+        print(f"Azure ML pipeline YAML: {args.output_yaml}")
+        return
+    client = workspace.create_client()
     submitted = client.jobs.create_or_update(
         pipeline,
         experiment_name=args.experiment_name,
