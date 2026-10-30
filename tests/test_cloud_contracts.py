@@ -123,6 +123,7 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
         config_path="configs/customer_intelligence.json",
         source_repository="https://github.com/example/mlops.git",
         source_ref="deploy/release-123",
+        managed_identity_client_id="00000000-0000-0000-0000-000000000001",
     )
 
     prepare_component = pipeline.jobs["prepared"].component
@@ -138,6 +139,9 @@ def test_customer_intelligence_pipeline_supports_private_workspace_source() -> N
     assert "config" not in prepare_component.inputs
     assert "raw_data" not in prepare_component.inputs
     assert "--archive" not in prepare_component.command
+    assert pipeline.jobs["regression_registered"].component.environment_variables == {
+        "AZURE_CLIENT_ID": "00000000-0000-0000-0000-000000000001"
+    }
 
 
 def test_customer_intelligence_pipeline_requires_complete_source_reference() -> None:

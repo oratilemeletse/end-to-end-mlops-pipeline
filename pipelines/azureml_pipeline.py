@@ -167,6 +167,7 @@ def build_customer_intelligence_pipeline(
     config_path: str = "configs/customer_intelligence.json",
     source_repository: str | None = None,
     source_ref: str | None = None,
+    managed_identity_client_id: str | None = None,
 ) -> PipelineJob:
     """Build governed retail regression and clustering branches."""
     if bool(source_repository) != bool(source_ref):
@@ -318,6 +319,11 @@ def build_customer_intelligence_pipeline(
         },
         outputs={"registration_evidence": Output(type="uri_folder")},
         environment=environment,
+        environment_variables=(
+            {"AZURE_CLIENT_ID": managed_identity_client_id}
+            if managed_identity_client_id
+            else None
+        ),
         compute=compute,
     )
 

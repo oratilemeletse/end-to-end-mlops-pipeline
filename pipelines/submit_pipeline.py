@@ -55,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-repository")
     parser.add_argument("--source-ref")
     parser.add_argument("--source-revision")
+    parser.add_argument("--managed-identity-client-id")
     parser.add_argument("--output-yaml", type=Path)
     return parser.parse_args()
 
@@ -90,6 +91,7 @@ def main() -> None:
             config_path=config_path,
             source_repository=args.source_repository,
             source_ref=args.source_ref,
+            managed_identity_client_id=args.managed_identity_client_id,
         )
     if args.output_yaml:
         args.output_yaml.parent.mkdir(parents=True, exist_ok=True)
